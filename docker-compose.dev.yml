@@ -1,0 +1,32 @@
+version: "3.9"
+
+# Development overrides — hot reload for backend and frontend
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/app
+      - face_data:/app/face_data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-attendance}:${POSTGRES_PASSWORD:-attendance_secret}@db:5432/${POSTGRES_DB:-attendance_db}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:5173"
+    command: npm run dev -- --host
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000

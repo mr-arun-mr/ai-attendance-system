@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+dist/
+.next/
+.nuxt/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Docker
+.docker/
+
+# DB
+*.db
+*.sqlite3
+
+# Models / large files
+backend/app/models_data/
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
