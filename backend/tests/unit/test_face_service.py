@@ -35,13 +35,19 @@ class TestMatchEmbedding:
         assert result is None
 
     def test_closest_candidate_wins(self):
-        query = _emb(1.0)
+        # _emb() normalises all same-sign scalars to identical unit vectors,
+        # so use structurally different vectors to get meaningful distances.
+        query = list(_emb(1.0))                                    # all-ones direction
+        close = list(query)                                        # identical → distance 0
+        mid = np.zeros(128); mid[0] = 1.0                         # only dim-0 non-zero
+        far = list(_emb(-1.0))                                     # opposite direction
+
         candidates = [
-            (10, _emb(0.9)),   # closest
-            (20, _emb(0.5)),   # further
-            (30, _emb(0.1)),   # furthest
+            (10, close),
+            (20, mid.tolist()),
+            (30, far),
         ]
-        result = match_embedding(query, candidates, threshold=1.0)
+        result = match_embedding(query, candidates, threshold=2.0)
         assert result is not None
         assert result[0] == 10
 

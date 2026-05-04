@@ -3,7 +3,10 @@ Integration test fixtures.
 
 Architecture
 ------------
-* test_engine  (session-scoped) – creates all tables once; drops them at the end.
+* test_engine  (session-scoped, SYNC) – creates all tables once via asyncio.run();
+                drops them at the end.  Using a plain sync fixture avoids pytest-asyncio
+                assigning a different event-loop to session-scoped vs function-scoped
+                async fixtures (the root cause of asyncpg cross-loop errors in 0.23.x).
 * client       (session-scoped) – single HTTPX AsyncClient for the whole suite.
                                    get_db is overridden to use test_engine.
 * clean_tables (function-scoped, autouse) – truncates every table after each test
@@ -11,11 +14,13 @@ Architecture
 * admin_user / admin_headers / regular_user / user_headers – recreated per test
   (they need the database to be clean, so they must be function-scoped).
 """
+import asyncio
 import os
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.pool import NullPool
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -24,22 +29,34 @@ TEST_DB_URL = os.environ.get(
 
 
 # ── Engine & schema ───────────────────────────────────────────────────────────
+# Sync fixture so pytest-asyncio never assigns it to a "session loop" that
+# differs from the function-scoped loop used by clean_tables / admin_user.
+# asyncio.run() creates a temporary, fully-isolated event loop for each call.
 
-@pytest_asyncio.fixture(scope="session")
-async def test_engine():
+@pytest.fixture(scope="session")
+def test_engine():
     from app.core.database import Base
 
-    engine = create_async_engine(TEST_DB_URL, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+    engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
+
+    import app.models  # noqa: F401 — registers all ORM classes with Base.metadata
+
+    async def _create():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+    async def _drop():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
+
+    asyncio.run(_create())
     yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+    asyncio.run(_drop())
 
 
-# ── HTTP client (session-scoped, lifespan skipped) ────────────────────────────
+# ── HTTP client (session-scoped) ──────────────────────────────────────────────
 
 @pytest_asyncio.fixture(scope="session")
 async def client(test_engine):
@@ -52,7 +69,6 @@ async def client(test_engine):
 
     app.dependency_overrides[get_db] = _override_get_db
 
-    # Use lifespan=False so the app engine is never disposed mid-suite
     async with AsyncClient(
         transport=ASGITransport(app=app, raise_app_exceptions=True),
         base_url="http://test",
@@ -83,7 +99,7 @@ async def admin_user(test_engine):
 
     async with AsyncSession(test_engine, expire_on_commit=False) as session:
         user = User(
-            email="admin@test.local",
+            email="admin@example.com",
             full_name="Test Admin",
             employee_id="ADMIN001",
             hashed_password=hash_password("testpass123"),
@@ -111,7 +127,7 @@ async def regular_user(test_engine):
 
     async with AsyncSession(test_engine, expire_on_commit=False) as session:
         user = User(
-            email="user@test.local",
+            email="user@example.com",
             full_name="Regular User",
             employee_id="USER001",
             hashed_password=hash_password("testpass123"),

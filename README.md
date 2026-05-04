@@ -211,6 +211,70 @@ Admin uploads N photos
 
 ---
 
+## Database Schema
+
+Five tables are created automatically on first startup via SQLAlchemy `create_all`.
+
+### `departments`
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | integer | PK, auto-increment |
+| `name` | varchar(100) | NOT NULL, UNIQUE |
+| `created_at` | timestamptz | server default `now()` |
+
+### `users`
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | integer | PK, auto-increment |
+| `email` | varchar(255) | NOT NULL, UNIQUE |
+| `full_name` | varchar(200) | NOT NULL |
+| `employee_id` | varchar(50) | NOT NULL, UNIQUE |
+| `hashed_password` | varchar(255) | NOT NULL |
+| `is_active` | boolean | default `true` |
+| `is_admin` | boolean | default `false` |
+| `department_id` | integer | FK → `departments.id`, nullable |
+| `photo_path` | varchar(500) | nullable |
+| `created_at` | timestamptz | server default `now()` |
+
+### `face_embeddings`
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | integer | PK, auto-increment |
+| `user_id` | integer | FK → `users.id` ON DELETE CASCADE, NOT NULL |
+| `embedding` | text | NOT NULL — JSON array of 128 floats (averaged across registration photos) |
+| `created_at` | timestamptz | server default `now()` |
+
+### `cameras`
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | integer | PK, auto-increment |
+| `name` | varchar(100) | NOT NULL |
+| `location` | varchar(200) | nullable |
+| `stream_url` | varchar(500) | NOT NULL |
+| `is_active` | boolean | default `true` |
+| `created_at` | timestamptz | server default `now()` |
+
+### `attendance_logs`
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | integer | PK, auto-increment |
+| `user_id` | integer | FK → `users.id`, NOT NULL |
+| `check_in` | timestamptz | NOT NULL |
+| `check_out` | timestamptz | nullable |
+| `date` | date | NOT NULL |
+| `confidence` | float | nullable — face-match score from recognition engine |
+| `source` | varchar(50) | default `'camera'` — `camera` or `manual` |
+| `camera_id` | integer | FK → `cameras.id`, nullable |
+| `is_late` | boolean | default `false` — true when check-in is after work start time |
+| `created_at` | timestamptz | server default `now()` |
+
+---
+
 ## Production Notes
 
 - Replace `SECRET_KEY` in `.env` with a long random string before deploying

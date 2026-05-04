@@ -51,17 +51,20 @@ class TestMarkAttendanceCheckin:
 
     async def test_sets_is_late_false_for_early_arrival(self):
         db = _mock_db(existing_log=None)
-        # Patch datetime.date.today and datetime.datetime.now to an on-time moment
         early = datetime.datetime(2024, 5, 1, 8, 0, 0, tzinfo=datetime.timezone.utc)
+
+        # Use a MagicMock for the `now` return value so we can mock .astimezone()
+        # on it — setting .return_value on a real datetime's builtin method raises.
+        early_local = MagicMock()
+        early_local.hour = WORK_START_HOUR - 1
+        early_local.minute = 0
+        mock_now = MagicMock()
+        mock_now.astimezone.return_value = early_local
+
         with patch("app.services.attendance_service.datetime") as mock_dt:
             mock_dt.date.today.return_value = early.date()
-            mock_dt.datetime.now.return_value = early
+            mock_dt.datetime.now.return_value = mock_now
             mock_dt.timezone.utc = datetime.timezone.utc
-            # early.astimezone() needs a real datetime for is_late check
-            early_local = MagicMock()
-            early_local.hour = WORK_START_HOUR - 1
-            early_local.minute = 0
-            mock_dt.datetime.now.return_value.astimezone.return_value = early_local
 
             log, status = await mark_attendance(db, user_id=1)
         assert status == "checked_in"
