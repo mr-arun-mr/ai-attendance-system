@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import {
   getAttendance, getDepartments, createManualAttendance,
-  updateAttendance, deleteAttendance,
+  updateAttendance, deleteAttendance, manualCheckout,
 } from "../api";
 import Badge from "../components/Badge";
 import Modal from "../components/Modal";
@@ -20,9 +20,17 @@ interface Log {
   confidence: number | null;
   source: string;
   is_late: boolean;
+  duration_minutes: number | null;
 }
 
 interface Dept { id: number; name: string }
+
+function fmtDuration(minutes: number | null): string {
+  if (minutes == null) return "—";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 export default function AttendanceLogs() {
   const { user: authUser } = useAuth();
@@ -30,9 +38,8 @@ export default function AttendanceLogs() {
   const [departments, setDepartments] = useState<Dept[]>([]);
   const [filterDate, setFilterDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [filterDept, setFilterDept] = useState("");
-  const [editLog, setEditLog] = useState<Log | null>(null);
   const [showManual, setShowManual] = useState(false);
-  const [manualForm, setManualForm] = useState({ user_id: "", check_in: "", date: "" });
+  const [manualForm, setManualForm] = useState({ user_id: "", check_in: "", check_out: "", date: "" });
   const [loading, setLoading] = useState(false);
 
   const load = () => {
@@ -55,9 +62,7 @@ export default function AttendanceLogs() {
   };
 
   const handleCheckout = async (log: Log) => {
-    await updateAttendance(log.id, {
-      check_out: new Date().toISOString(),
-    });
+    await manualCheckout(log.user_id);
     load();
   };
 
@@ -67,9 +72,11 @@ export default function AttendanceLogs() {
       await createManualAttendance({
         user_id: Number(manualForm.user_id),
         check_in: new Date(manualForm.check_in).toISOString(),
+        check_out: manualForm.check_out ? new Date(manualForm.check_out).toISOString() : undefined,
         date: manualForm.date || undefined,
       });
       setShowManual(false);
+      setManualForm({ user_id: "", check_in: "", check_out: "", date: "" });
       load();
     } catch (e: any) {
       alert(e.response?.data?.detail ?? "Error creating record");
@@ -78,12 +85,21 @@ export default function AttendanceLogs() {
     }
   };
 
+  const totalPresent = logs.length;
+  const totalLate = logs.filter((l) => l.is_late).length;
+  const checkedOut = logs.filter((l) => l.check_out != null);
+  const avgDuration = checkedOut.length
+    ? Math.round(
+        checkedOut.reduce((s, l) => s + (l.duration_minutes ?? 0), 0) / checkedOut.length
+      )
+    : null;
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Attendance Logs</h1>
-          <p className="text-sm text-gray-500 mt-1">View and manage attendance records</p>
+          <p className="text-sm text-gray-500 mt-1">View and manage check-in / check-out records</p>
         </div>
         {authUser?.is_admin && (
           <button
@@ -121,12 +137,32 @@ export default function AttendanceLogs() {
         </div>
       </div>
 
+      {/* Quick stats bar */}
+      {logs.length > 0 && (
+        <div className="flex gap-6 mb-4 px-1 text-sm">
+          <span className="text-gray-500">
+            <strong className="text-gray-900">{totalPresent}</strong> present
+          </span>
+          <span className="text-gray-500">
+            <strong className="text-yellow-600">{totalLate}</strong> late
+          </span>
+          <span className="text-gray-500">
+            <strong className="text-blue-700">{checkedOut.length}</strong> checked out
+          </span>
+          {avgDuration != null && (
+            <span className="text-gray-500">
+              Avg time in: <strong className="text-blue-700">{fmtDuration(avgDuration)}</strong>
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {["Name", "ID", "Dept", "Check In", "Check Out", "Status", "Source", "Actions"].map((h) => (
+              {["Name", "ID", "Dept", "Check In", "Check Out", "Time In", "Status", "Source", "Actions"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   {h}
                 </th>
@@ -139,9 +175,22 @@ export default function AttendanceLogs() {
                 <td className="px-4 py-3 font-medium">{log.full_name}</td>
                 <td className="px-4 py-3 text-gray-500">{log.employee_id}</td>
                 <td className="px-4 py-3 text-gray-500">{log.department ?? "—"}</td>
-                <td className="px-4 py-3">{format(new Date(log.check_in), "HH:mm")}</td>
+                <td className="px-4 py-3 font-mono">{format(new Date(log.check_in), "HH:mm")}</td>
+                <td className="px-4 py-3 font-mono">
+                  {log.check_out ? (
+                    format(new Date(log.check_out), "HH:mm")
+                  ) : (
+                    <span className="text-yellow-600 text-xs">Still in</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
-                  {log.check_out ? format(new Date(log.check_out), "HH:mm") : "—"}
+                  {log.duration_minutes != null ? (
+                    <span className="font-semibold text-blue-700">
+                      {fmtDuration(log.duration_minutes)}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400 text-xs">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <Badge
@@ -199,6 +248,15 @@ export default function AttendanceLogs() {
                 type="datetime-local"
                 value={manualForm.check_in}
                 onChange={(e) => setManualForm((f) => ({ ...f, check_in: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Check-out Time (optional)</label>
+              <input
+                type="datetime-local"
+                value={manualForm.check_out}
+                onChange={(e) => setManualForm((f) => ({ ...f, check_out: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               />
             </div>
