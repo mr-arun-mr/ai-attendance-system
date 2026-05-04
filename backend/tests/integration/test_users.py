@@ -30,7 +30,7 @@ class TestListUsers:
             await session.refresh(dept)
 
             user = User(
-                email="eng@test.local",
+                email="eng@example.com",
                 full_name="Engineer",
                 employee_id="ENG001",
                 hashed_password=hash_password("pass"),
@@ -52,7 +52,7 @@ class TestCreateUser:
         resp = await client.post(
             "/users/",
             json={
-                "email": "new@test.local",
+                "email": "new@example.com",
                 "full_name": "New User",
                 "employee_id": "NEW001",
                 "password": "secret123",
@@ -61,14 +61,14 @@ class TestCreateUser:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["email"] == "new@test.local"
+        assert data["email"] == "new@example.com"
         assert data["has_face"] is False
 
     async def test_non_admin_cannot_create_user(self, client, user_headers):
         resp = await client.post(
             "/users/",
             json={
-                "email": "x@test.local",
+                "email": "x@example.com",
                 "full_name": "X",
                 "employee_id": "X001",
                 "password": "pass",
@@ -81,7 +81,7 @@ class TestCreateUser:
         resp = await client.post(
             "/users/",
             json={
-                "email": "admin@test.local",  # already exists
+                "email": "admin@example.com",  # already exists
                 "full_name": "Duplicate",
                 "employee_id": "DUP001",
                 "password": "pass",

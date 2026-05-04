@@ -17,7 +17,7 @@ os.environ["DATABASE_URL"] = os.environ.get(
     "postgresql+asyncpg://attendance:attendance_secret@localhost:5432/attendance_test",
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
-os.environ.setdefault("ADMIN_EMAIL", "admin@test.local")
+os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
 os.environ.setdefault("ADMIN_PASSWORD", "testadmin123")
 os.environ.setdefault("FACE_DATA_DIR", "/tmp/test_face_data")
 
