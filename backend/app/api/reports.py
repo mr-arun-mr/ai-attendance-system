@@ -68,7 +68,11 @@ async def export_csv(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Employee ID", "Full Name", "Department", "Check In", "Check Out", "Late", "Source", "Confidence"])
+    writer.writerow([
+        "Date", "Employee ID", "Full Name", "Department",
+        "Check In", "Check Out", "Duration (min)", "Duration (h:m)",
+        "Late", "Source", "Confidence",
+    ])
 
     for log, user in rows:
         dept_name = ""
@@ -76,6 +80,14 @@ async def export_csv(
             dept_r = await db.execute(select(Department).where(Department.id == user.department_id))
             dept = dept_r.scalar_one_or_none()
             dept_name = dept.name if dept else ""
+
+        duration_min = ""
+        duration_hm = ""
+        if log.check_in and log.check_out:
+            mins = max(0, int((log.check_out - log.check_in).total_seconds() // 60))
+            duration_min = str(mins)
+            duration_hm = f"{mins // 60}h {mins % 60}m"
+
         writer.writerow([
             log.date,
             user.employee_id,
@@ -83,6 +95,8 @@ async def export_csv(
             dept_name,
             log.check_in.strftime("%H:%M:%S") if log.check_in else "",
             log.check_out.strftime("%H:%M:%S") if log.check_out else "",
+            duration_min,
+            duration_hm,
             "Yes" if log.is_late else "No",
             log.source,
             f"{log.confidence:.2f}" if log.confidence else "",

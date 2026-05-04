@@ -5,14 +5,17 @@ Protocol:
   Client → Server: raw JPEG frame bytes
   Server → Client: JSON message
     { "type": "frame", "jpeg": "<base64>", "detections": [...] }
-    { "type": "attendance", "user_id": int, "name": str, "confidence": float }
+    detection = {
+        "user_id": int, "name": str, "confidence": float,
+        "event": "checked_in" | "checked_out" | "already_done" | "too_soon"
+    }
+    { "type": "ping" }
     { "type": "error", "detail": str }
 """
 import base64
 import json
 import asyncio
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.face_embedding import FaceEmbedding
@@ -23,7 +26,7 @@ from app.services.attendance_service import mark_attendance
 router = APIRouter(tags=["camera-ws"])
 
 
-async def _load_embeddings(db: AsyncSession):
+async def _load_embeddings(db):
     result = await db.execute(
         select(FaceEmbedding.user_id, FaceEmbedding.embedding, User.full_name)
         .join(User, FaceEmbedding.user_id == User.id)
@@ -37,7 +40,6 @@ async def camera_websocket(websocket: WebSocket, camera_id: int):
     await websocket.accept()
     try:
         async with AsyncSessionLocal() as db:
-            # Reload embeddings every 60 s
             embeddings = await _load_embeddings(db)
             last_reload = asyncio.get_event_loop().time()
 
@@ -58,7 +60,7 @@ async def camera_websocket(websocket: WebSocket, camera_id: int):
 
                 detections_out = []
                 for rec in recognitions:
-                    log = await mark_attendance(
+                    log, event = await mark_attendance(
                         db,
                         rec["user_id"],
                         confidence=rec["confidence"],
@@ -68,7 +70,10 @@ async def camera_websocket(websocket: WebSocket, camera_id: int):
                         "user_id": rec["user_id"],
                         "name": rec["name"],
                         "confidence": rec["confidence"],
-                        "marked": log is not None,
+                        "event": event,
+                        # include times so the frontend can display them
+                        "check_in": log.check_in.isoformat() if log and log.check_in else None,
+                        "check_out": log.check_out.isoformat() if log and log.check_out else None,
                     })
 
                 await websocket.send_json({

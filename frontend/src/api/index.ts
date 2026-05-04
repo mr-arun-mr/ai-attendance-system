@@ -71,6 +71,12 @@ export const markFromPhoto = (file: File, cameraId?: number) => {
   return api.post("/attendance/mark-photo", form).then((r) => r.data);
 };
 
+export const manualCheckout = (userId: number) =>
+  api.post(`/attendance/${userId}/checkout`).then((r) => r.data);
+
+export const getUserTimeSummary = (params?: Record<string, unknown>) =>
+  api.get("/attendance/summary/users", { params }).then((r) => r.data);
+
 // Reports
 export const getWeeklyReport = (params?: Record<string, unknown>) =>
   api.get("/reports/weekly", { params }).then((r) => r.data);
