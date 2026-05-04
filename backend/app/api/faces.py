@@ -9,7 +9,6 @@ from app.models.face_embedding import FaceEmbedding
 from app.schemas.user import UserOut
 from app.api.deps import get_current_user, require_admin
 from app.services.face_service import extract_embedding
-import numpy as np
 
 router = APIRouter(prefix="/faces", tags=["faces"])
 
@@ -21,7 +20,7 @@ async def register_faces(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Upload 1–10 face photos for a user. Embeddings are averaged and stored."""
+    """Upload 1–10 face photos for a user. Each photo's embedding is stored individually."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -37,14 +36,43 @@ async def register_faces(
     if not embeddings:
         raise HTTPException(status_code=422, detail="No valid face found in any uploaded image")
 
-    avg_embedding = np.mean(embeddings, axis=0).tolist()
-
-    # Remove old embeddings and store fresh
+    # Store one embedding row per photo so every angle is preserved for matching
     await db.execute(delete(FaceEmbedding).where(FaceEmbedding.user_id == user_id))
-    fe = FaceEmbedding(user_id=user_id, embedding=json.dumps(avg_embedding))
-    db.add(fe)
+    for emb in embeddings:
+        db.add(FaceEmbedding(user_id=user_id, embedding=json.dumps(emb)))
     await db.commit()
     return {"message": f"Face registered from {len(embeddings)} photo(s)", "user_id": user_id}
+
+
+@router.post("/register-from-frame/{user_id}")
+async def register_face_from_frame(
+    user_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Append a face embedding captured from a CCTV frame to the user's registration.
+
+    Use this after HD enrollment to add a reference embedding in the CCTV domain
+    (same camera angle, lighting, resolution), which reduces the HD-vs-CCTV
+    domain gap and improves live recognition accuracy.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    emb = extract_embedding(await file.read())
+    if emb is None:
+        raise HTTPException(status_code=422, detail="No face detected in frame")
+
+    db.add(FaceEmbedding(user_id=user_id, embedding=json.dumps(emb)))
+    await db.commit()
+
+    count_result = await db.execute(
+        select(FaceEmbedding).where(FaceEmbedding.user_id == user_id)
+    )
+    total = len(count_result.scalars().all())
+    return {"message": "Frame registered", "user_id": user_id, "total_embeddings": total}
 
 
 @router.delete("/register/{user_id}", status_code=204)
