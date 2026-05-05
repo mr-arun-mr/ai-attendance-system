@@ -6,7 +6,7 @@ class TestLogin:
     async def test_login_success(self, client, admin_user):
         resp = await client.post(
             "/auth/login",
-            json={"email": "admin@test.local", "password": "testpass123"},
+            json={"email": "admin@example.com", "password": "testpass123"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -18,14 +18,14 @@ class TestLogin:
     async def test_login_wrong_password(self, client, admin_user):
         resp = await client.post(
             "/auth/login",
-            json={"email": "admin@test.local", "password": "wrong"},
+            json={"email": "admin@example.com", "password": "wrong"},
         )
         assert resp.status_code == 401
 
     async def test_login_unknown_email(self, client):
         resp = await client.post(
             "/auth/login",
-            json={"email": "nobody@test.local", "password": "pass"},
+            json={"email": "nobody@example.com", "password": "pass"},
         )
         assert resp.status_code == 401
 
@@ -36,7 +36,7 @@ class TestLogin:
 
         async with AsyncSession(test_engine, expire_on_commit=False) as session:
             user = User(
-                email="inactive@test.local",
+                email="inactive@example.com",
                 full_name="Inactive",
                 employee_id="INA001",
                 hashed_password=hash_password("pass"),
@@ -47,14 +47,14 @@ class TestLogin:
 
         resp = await client.post(
             "/auth/login",
-            json={"email": "inactive@test.local", "password": "pass"},
+            json={"email": "inactive@example.com", "password": "pass"},
         )
         assert resp.status_code == 403
 
     async def test_token_allows_authenticated_request(self, client, admin_user):
         resp = await client.post(
             "/auth/login",
-            json={"email": "admin@test.local", "password": "testpass123"},
+            json={"email": "admin@example.com", "password": "testpass123"},
         )
         token = resp.json()["access_token"]
         resp2 = await client.get(

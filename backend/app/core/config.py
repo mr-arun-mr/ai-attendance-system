@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]
     RECOGNITION_THRESHOLD: float = 0.55
+    MIN_FACE_SIZE: int = 60  # minimum face height/width in pixels to attempt recognition
     ADMIN_EMAIL: str = "admin@attendance.local"
     ADMIN_PASSWORD: str = "admin123"
     FACE_DATA_DIR: str = "/app/face_data"

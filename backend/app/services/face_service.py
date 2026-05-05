@@ -102,6 +102,8 @@ def detect_faces_in_frame(
     detections = []
 
     for (top, right, bottom, left), encoding in zip(face_locations, face_encodings):
+        if (bottom - top) < settings.MIN_FACE_SIZE or (right - left) < settings.MIN_FACE_SIZE:
+            continue  # face too small (distant/partial) to match reliably
         match = match_embedding(encoding.tolist(), id_emb_pairs)
         if match:
             user_id, confidence = match
