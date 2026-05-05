@@ -80,16 +80,22 @@ def annotate_frame(
 def detect_faces_in_frame(
     frame_bytes: bytes,
     stored_embeddings: list[tuple[int, str, list[float]]],
-) -> tuple[bytes, list[dict]]:
+) -> tuple[bytes, list[dict], list[dict]]:
     """
     Run face detection + recognition on a frame.
     stored_embeddings: list of (user_id, full_name, embedding)
-    Returns (annotated_jpeg_bytes, list of recognition results)
+
+    Returns:
+      (annotated_jpeg_bytes, recognised_results, unknown_faces)
+
+    recognised_results: list of {user_id, name, confidence}
+    unknown_faces: list of {embedding: list[float], crop_bytes: bytes | None}
+      — one entry per unmatched face above MIN_FACE_SIZE, for external buffering.
     """
     nparr = np.frombuffer(frame_bytes, np.uint8)
     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img_bgr is None:
-        return frame_bytes, []
+        return frame_bytes, [], []
 
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     face_locations = face_recognition.face_locations(img_rgb)
@@ -99,6 +105,7 @@ def detect_faces_in_frame(
     name_map = {uid: name for uid, name, _ in stored_embeddings}
 
     results = []
+    unknowns = []
     detections = []
 
     for (top, right, bottom, left), encoding in zip(face_locations, face_encodings):
@@ -118,7 +125,19 @@ def detect_faces_in_frame(
                 "top": top, "right": right, "bottom": bottom, "left": left,
                 "name": "Unknown", "confidence": None,
             })
+            # Crop the face for thumbnail storage
+            pad = 10
+            h, w = img_bgr.shape[:2]
+            crop = img_bgr[
+                max(0, top - pad):min(h, bottom + pad),
+                max(0, left - pad):min(w, right + pad),
+            ]
+            crop_bytes: Optional[bytes] = None
+            if crop.size > 0:
+                _, cbuf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                crop_bytes = cbuf.tobytes()
+            unknowns.append({"embedding": encoding.tolist(), "crop_bytes": crop_bytes})
 
     _, buf = cv2.imencode(".jpg", img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
     annotated = annotate_frame(buf.tobytes(), detections)
-    return annotated, results
+    return annotated, results, unknowns

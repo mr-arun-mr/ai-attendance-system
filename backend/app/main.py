@@ -10,7 +10,7 @@ from app.core.database import engine, AsyncSessionLocal, Base
 from app.core.security import hash_password
 
 # Import all models so SQLAlchemy registers them before create_all
-from app.models import User, Department, FaceEmbedding, AttendanceLog, Camera
+from app.models import User, Department, FaceEmbedding, AttendanceLog, Camera, FaceCluster, UnknownFaceCapture
 
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router, dept_router
@@ -19,6 +19,7 @@ from app.api.attendance import router as attendance_router
 from app.api.reports import router as reports_router
 from app.api.cameras import router as cameras_router
 from app.api.camera_ws import router as ws_router
+from app.api.clusters import router as clusters_router
 
 
 async def _seed_admin(db):
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     os.makedirs(os.path.join(settings.FACE_DATA_DIR, "photos"), exist_ok=True)
+    os.makedirs(os.path.join(settings.FACE_DATA_DIR, "unknown_thumbs"), exist_ok=True)
     async with AsyncSessionLocal() as db:
         await _seed_admin(db)
     yield
@@ -75,6 +77,7 @@ app.include_router(attendance_router)
 app.include_router(reports_router)
 app.include_router(cameras_router)
 app.include_router(ws_router)
+app.include_router(clusters_router)
 
 
 @app.get("/health")
