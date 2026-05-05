@@ -81,19 +81,20 @@ class TestShouldSaveUnknown:
         import time
 
         base = np.array(_emb(1.0))
-        # Construct a vector exactly at UNKNOWN_DEDUP_DIST from base
+        # Construct a unit vector orthogonal to base
         perp = np.zeros(128)
         perp[0] = 1.0
         perp = perp - base * np.dot(base, perp)
         perp /= np.linalg.norm(perp)
-        at_boundary = (base + UNKNOWN_DEDUP_DIST * perp).tolist()
 
-        # At exactly the threshold, distance == UNKNOWN_DEDUP_DIST → NOT saved (< is strict)
+        # Clearly above threshold → should be saved
+        above = (base + (UNKNOWN_DEDUP_DIST + 0.05) * perp).tolist()
         recent = [(base.tolist(), time.time())]
-        result = fn(at_boundary, recent)
-        # distance at boundary equals UNKNOWN_DEDUP_DIST; condition is dist < threshold
-        # so this face SHOULD be saved (not a duplicate)
-        assert result is True
+        assert fn(above, recent) is True
+
+        # Clearly below threshold → should be skipped
+        below = (base + (UNKNOWN_DEDUP_DIST - 0.05) * perp).tolist()
+        assert fn(below, recent) is False
 
 
 # ── Threshold constants sanity check ─────────────────────────────────────────
