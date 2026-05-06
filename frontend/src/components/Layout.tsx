@@ -2,12 +2,13 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: "📊" },
-  { to: "/monitor", label: "Live Monitor", icon: "📹" },
-  { to: "/people", label: "People", icon: "👥" },
-  { to: "/attendance", label: "Attendance", icon: "✅" },
-  { to: "/reports", label: "Reports", icon: "📈" },
-  { to: "/settings", label: "Settings", icon: "⚙️" },
+  { to: "/", label: "Dashboard", icon: "📊", adminOnly: false },
+  { to: "/monitor", label: "Live Monitor", icon: "📹", adminOnly: false },
+  { to: "/people", label: "People", icon: "👥", adminOnly: false },
+  { to: "/attendance", label: "Attendance", icon: "✅", adminOnly: false },
+  { to: "/reports", label: "Reports", icon: "📈", adminOnly: false },
+  { to: "/clusters", label: "Clusters", icon: "🔍", adminOnly: true },
+  { to: "/settings", label: "Settings", icon: "⚙️", adminOnly: false },
 ];
 
 export default function Layout() {
@@ -28,7 +29,7 @@ export default function Layout() {
           <p className="text-xs text-gray-400 mt-1 truncate">{user?.full_name}</p>
         </div>
         <nav className="flex-1 py-4 space-y-1 px-3">
-          {navItems.map((item) => (
+          {navItems.filter((item) => !item.adminOnly || user?.is_admin).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

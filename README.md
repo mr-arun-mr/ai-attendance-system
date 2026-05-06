@@ -7,7 +7,9 @@ A full-stack, AI-powered attendance system that uses face recognition to automat
 ## Features
 
 - **Automatic attendance** — cameras stream frames to the backend; recognized faces are checked in instantly
-- **Face registration wizard** — upload 3–10 photos per person; embeddings are averaged for accuracy
+- **Face registration wizard** — upload 1–10 photos per person; each photo's embedding is stored separately so every angle is available for matching
+- **CCTV-domain enrollment** — append a live-camera frame directly to a user's embeddings to close the HD-photo vs. CCTV resolution gap
+- **Unknown face clustering** — unrecognised faces are buffered and grouped by identity using DBSCAN; confident matches are auto-linked to registered users; borderline matches surface in an admin review queue
 - **Live monitor** — real-time annotated video feed with bounding boxes and name labels
 - **Test Mode** — test without a camera by uploading a photo or video file
 - **Attendance logs** — filterable table with manual entry, checkout, and delete
@@ -21,7 +23,7 @@ A full-stack, AI-powered attendance system that uses face recognition to automat
 
 | Layer | Technology |
 |---|---|
-| AI / CV | Python, OpenCV, face_recognition (dlib) |
+| AI / CV | Python, OpenCV, face_recognition (dlib), scikit-learn (DBSCAN clustering) |
 | Backend | FastAPI, SQLAlchemy (async), PostgreSQL, WebSockets |
 | Frontend | React 18, Vite, TailwindCSS, Recharts |
 | Infrastructure | Docker, Docker Compose, Nginx |
@@ -99,7 +101,9 @@ Password: admin123
 Go to **Settings → Departments** and add your departments (e.g. Engineering, HR).
 
 ### Step 2 — Add people
-Go to **People → Add Person**, fill in the form, then click **Face** to open the face registration wizard. Upload 3–10 clear face photos. The system averages the embeddings for better recognition accuracy.
+Go to **People → Add Person**, fill in the form, then click **Face** to open the face registration wizard. Upload 1–10 clear face photos from different angles. Each photo is stored as a separate embedding so the system can match the person even when the camera angle varies.
+
+**Optional — CCTV-domain enrollment:** after starting the live monitor, you can capture a frame of the person and register it directly via `POST /faces/register-from-frame/{id}`. This adds a low-resolution, real-lighting reference that reduces false negatives from the HD-vs-CCTV domain gap.
 
 ### Step 3 — Add cameras (for live feed)
 Go to **Settings → Cameras** and add your camera with its RTSP or HTTP stream URL.
@@ -145,7 +149,12 @@ Interactive documentation is available at **http://localhost:8000/docs** when th
 | POST | `/users/{id}/photo` | Upload profile photo |
 | POST | `/faces/register/{id}` | Register face from photos |
 | DELETE | `/faces/register/{id}` | Remove face data |
+| POST | `/faces/register-from-frame/{id}` | Append a CCTV-domain frame embedding to a user |
 | POST | `/faces/identify` | Identify a face from a photo |
+| GET | `/clusters/` | List unknown-face clusters (admin) |
+| POST | `/clusters/run` | Run DBSCAN clustering + auto-link (admin) |
+| POST | `/clusters/{id}/link` | Manually assign a cluster to a user (admin) |
+| POST | `/clusters/{id}/reject` | Reject a cluster (admin) |
 | GET | `/attendance/` | List attendance logs |
 | POST | `/attendance/mark-photo` | Mark attendance from a photo |
 | POST | `/attendance/manual` | Manual attendance entry (admin) |
@@ -182,8 +191,9 @@ Camera frame (JPEG bytes)
   → WebSocket /ws/camera/{id}
   → Face detection (OpenCV)
   → Embedding extraction (face_recognition / dlib)
-  → Cosine similarity vs. stored embeddings
+  → L2 distance vs. all stored embeddings (best match wins)
   → If match AND not already marked today → INSERT attendance_log
+  → Unmatched faces → buffered as UnknownFaceCapture (with dedup)
   → Annotated JPEG + detection JSON → frontend
 ```
 
@@ -191,16 +201,27 @@ Camera frame (JPEG bytes)
 ```
 Admin uploads N photos
   → POST /faces/register/{user_id}
-  → Extract embedding from each photo
-  → Average all embeddings into one vector
-  → Store in face_embeddings table
+  → Extract embedding from each photo independently
+  → Store one face_embeddings row per photo (angle preserved)
+```
+
+### Unknown face clustering (admin-triggered)
+```
+POST /clusters/run
+  → Load all un-clustered UnknownFaceCapture rows
+  → DBSCAN (eps=0.50, min_samples=3) groups them by identity
+  → For each cluster: compute centroid embedding
+  → Compare centroid vs. all registered FaceEmbeddings
+      L2 < 0.45  → auto-link: append centroid as new FaceEmbedding
+      0.45–0.60  → pending with nearest-user hint for admin review
+      ≥ 0.60     → pending, no hint (genuinely unknown person)
 ```
 
 ---
 
 ## Database Schema
 
-Five tables are created automatically on first startup via SQLAlchemy `create_all`.
+Seven tables are created automatically on first startup via SQLAlchemy `create_all`.
 
 ### `departments`
 
@@ -231,7 +252,7 @@ Five tables are created automatically on first startup via SQLAlchemy `create_al
 |---|---|---|
 | `id` | integer | PK, auto-increment |
 | `user_id` | integer | FK → `users.id` ON DELETE CASCADE, NOT NULL |
-| `embedding` | text | NOT NULL — JSON array of 128 floats (averaged across registration photos) |
+| `embedding` | text | NOT NULL — JSON array of 128 floats; one row per registered photo or auto-linked cluster centroid |
 | `created_at` | timestamptz | server default `now()` |
 
 ### `cameras`
@@ -259,6 +280,36 @@ Five tables are created automatically on first startup via SQLAlchemy `create_al
 | `camera_id` | integer | FK → `cameras.id`, nullable |
 | `is_late` | boolean | default `false` — true when check-in is after work start time |
 | `created_at` | timestamptz | server default `now()` |
+
+### `unknown_face_captures`
+
+Temporary buffer of unrecognised faces seen by cameras. Rows are grouped into clusters by `POST /clusters/run` and can be pruned once clustered.
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | integer | PK, auto-increment |
+| `embedding` | varchar(8192) | NOT NULL — JSON array of 128 floats |
+| `thumbnail_path` | varchar(500) | nullable — relative path under `/face_data/unknown_thumbs/` |
+| `camera_id` | integer | FK → `cameras.id` ON DELETE SET NULL, nullable |
+| `captured_at` | timestamptz | server default `now()` |
+| `cluster_id` | integer | FK → `face_clusters.id` ON DELETE SET NULL, nullable — set after clustering |
+
+### `face_clusters`
+
+One row per inferred identity discovered by DBSCAN clustering of unknown captures.
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | integer | PK, auto-increment |
+| `centroid` | varchar(8192) | NOT NULL — mean embedding of all member captures |
+| `sample_count` | integer | number of captures in the cluster |
+| `thumbnail_path` | varchar(500) | nullable — thumbnail of the capture closest to the centroid |
+| `nearest_user_id` | integer | FK → `users.id` ON DELETE SET NULL, nullable — closest registered user (hint) |
+| `nearest_user_distance` | float | nullable — L2 distance to `nearest_user_id` |
+| `linked_user_id` | integer | FK → `users.id` ON DELETE SET NULL, nullable — set when linked |
+| `status` | varchar(20) | `pending` / `linked` / `rejected` |
+| `created_at` | timestamptz | server default `now()` |
+| `updated_at` | timestamptz | server default `now()`, updated on change |
 
 ---
 
