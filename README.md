@@ -41,7 +41,6 @@ ai-attendance-system/
 │   │   ├── schemas/        # Pydantic request/response schemas
 │   │   └── services/       # Face recognition logic, attendance service
 │   ├── Dockerfile
-│   ├── Dockerfile.dev
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
@@ -49,11 +48,9 @@ ai-attendance-system/
 │   │   ├── components/     # Layout, Modal, StatCard, Badge
 │   │   ├── context/        # AuthContext (JWT storage)
 │   │   └── pages/          # Dashboard, LiveMonitor, People, AttendanceLogs, Reports, Settings
-│   ├── nginx.conf
 │   ├── Dockerfile
-│   └── Dockerfile.dev
-├── docker-compose.yml       # Production
-├── docker-compose.dev.yml   # Development (hot reload)
+│   └── nginx.conf
+├── docker-compose.yml
 └── .env.example
 ```
 
@@ -83,6 +80,8 @@ docker compose up --build
 | Backend API | http://localhost:8000 |
 | API docs (Swagger) | http://localhost:8000/docs |
 
+Backend reloads on file save (Uvicorn `--reload`), frontend hot-reloads via Vite dev server.
+
 ### 3. Default login
 
 ```
@@ -91,18 +90,6 @@ Password: admin123
 ```
 
 > Change the admin password after first login via the People page.
-
----
-
-## Development Setup (Hot Reload)
-
-```bash
-cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-```
-
-- Backend reloads on file save (Uvicorn `--reload`)
-- Frontend hot-reloads via Vite dev server on port `3000`
 
 ---
 
@@ -279,5 +266,5 @@ Five tables are created automatically on first startup via SQLAlchemy `create_al
 
 - Replace `SECRET_KEY` in `.env` with a long random string before deploying
 - Mount `/app/face_data` as a persistent volume (already configured in `docker-compose.yml`)
-- The `face_recognition` library requires `cmake` and `dlib` — the Dockerfile handles this with a multi-stage build
+- The `face_recognition` library requires `cmake` and `dlib` — the backend Dockerfile installs these at build time
 - For high-resolution cameras or multiple simultaneous feeds, consider running the backend with multiple Uvicorn workers
