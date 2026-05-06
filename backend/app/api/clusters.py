@@ -16,6 +16,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.models.user import User
 from app.models.face_cluster import FaceCluster
+from app.models.unknown_face_capture import UnknownFaceCapture
 from app.api.deps import require_admin
 from app.services.cluster_service import (
     run_clustering,
@@ -68,6 +69,30 @@ async def run_cluster_pipeline(
         "clustering": cluster_summary,
         "auto_link": link_summary,
     }
+
+
+@router.get("/{cluster_id}/samples")
+async def list_cluster_samples(
+    cluster_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Return thumbnail paths for all UnknownFaceCapture rows in this cluster."""
+    result = await db.execute(
+        select(FaceCluster).where(FaceCluster.id == cluster_id)
+    )
+    cluster = result.scalar_one_or_none()
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    cap_result = await db.execute(
+        select(UnknownFaceCapture).where(UnknownFaceCapture.cluster_id == cluster_id)
+    )
+    captures = cap_result.scalars().all()
+    return [
+        {"id": c.id, "thumbnail_path": c.thumbnail_path, "captured_at": c.captured_at.isoformat() if c.captured_at else None}
+        for c in captures
+    ]
 
 
 @router.post("/{cluster_id}/link")

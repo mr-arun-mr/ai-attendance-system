@@ -104,3 +104,19 @@ export const updateCamera = (id: number, data: Record<string, unknown>) =>
   api.patch(`/cameras/${id}`, data).then((r) => r.data);
 
 export const deleteCamera = (id: number) => api.delete(`/cameras/${id}`);
+
+// Clusters
+export const getClusters = (status?: string) =>
+  api.get("/clusters/", { params: status ? { status } : {} }).then((r) => r.data);
+
+export const runClustering = () =>
+  api.post("/clusters/run").then((r) => r.data);
+
+export const getClusterSamples = (clusterId: number) =>
+  api.get(`/clusters/${clusterId}/samples`).then((r) => r.data);
+
+export const linkCluster = (clusterId: number, userId: number) =>
+  api.post(`/clusters/${clusterId}/link`, null, { params: { user_id: userId } }).then((r) => r.data);
+
+export const rejectCluster = (clusterId: number) =>
+  api.post(`/clusters/${clusterId}/reject`).then((r) => r.data);

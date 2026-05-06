@@ -8,6 +8,7 @@ import People from "./pages/People";
 import AttendanceLogs from "./pages/AttendanceLogs";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import Clusters from "./pages/Clusters";
 
 function ProtectedRoutes() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ function ProtectedRoutes() {
         <Route path="/attendance" element={<AttendanceLogs />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/clusters" element={<Clusters />} />
       </Route>
     </Routes>
   );
